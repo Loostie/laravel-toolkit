@@ -55,3 +55,4 @@ Here you'll need to change the database connection info, if you already have MyS
 
 - This tool is created and tested for Ubuntu 22.04 (Jammy Jellyfish)
 (It will most likely work on older versions of Ubuntu)
+- laraveltk needs to be ran in the same folder with `db.config` and the `templates` folder
