@@ -130,10 +130,25 @@ function install_nginx() {
     sudo apt update &>/dev/null
     echo "Installing NGINX..."
     sudo apt install nginx -y &>/dev/null
+    sudo rm /etc/nginx/sites-enabled/default &>/dev/null
     sudo systemctl start nginx &>/dev/null
     sudo systemctl enable nginx &>/dev/null
 
     echo "NGINX has been installed!"
+    read -p "Press ENTER to continue"
+    menu
+}
+
+function uninstall_apache2() {
+    clear
+    echo "Stopping Apache2 service..."
+    sudo service apache2 stop &>/dev/null
+    echo "Uninstalling Apache2 and its dependent packages..."
+    sudo apt purge apache2 apache2-utils apache2-bin apache2.2-common -y &>/dev/null
+    sudo apt autoremove -y &>/dev/null
+    sudo rm -rf /etc/apache2
+
+    echo "Apache2 has been uninstalled!"
     read -p "Press ENTER to continue"
     menu
 }
@@ -254,6 +269,9 @@ function create_laravel_project() {
     composer create-project laravel/laravel $appname &>/dev/null
     sudo mv $appname $project_path
 
+    echo "Modifying folder permissions..."
+    sudo chown www-data:www-data -R $project_path$appname &>/dev/null
+
     read -p "Do you want to create a database for you application? (yes/no): " dbres
     dbres=${dbres,,}
     if [ "$dbres" = "yes" ]
@@ -266,7 +284,6 @@ function create_laravel_project() {
         then configure_project_nginx
     fi
 
-
     menu
 }
 
@@ -276,6 +293,13 @@ function check_mysql () {
 
 function check_nginx() {
     if which nginx > /dev/null 2>&1
+        then return 0
+        else return 1
+    fi
+}
+
+function check_apache2() {
+    if which apache2 > /dev/null 2>&1
         then return 0
         else return 1
     fi
@@ -307,19 +331,25 @@ menu () {
         else echo -e $reset"[$Yellow"1"$reset]$BWhite Install NGINX"
     fi
     if check_mysql
-        then echo -e $BGreen"MySQL Installed!"
+        then echo -e $BGreen"MySQL Installed!" 
+            if [[ -z $DBPASS || -z $DBHOST || -z $DBPORT || -z $DBUSER ]]
+                then echo -e $reset$BRed"You have not configured DB credentials!"
+            fi
         else echo -e $reset"[$Yellow"2"$reset]$BWhite Install MySQL" 
+    fi
+    if check_apache2
+        then echo -e $reset"[$Yellow"3"$reset]$BRed Apache2 installed, uninstall if this causes problems" 
     fi
     echo -e ""
     echo -e $reset"$BCyan Configuration"
     echo -e $reset"-----------------"
-    echo -e $reset"[$Yellow"3"$reset]$BWhite New Laravel project"
+    echo -e $reset"[$Yellow"4"$reset]$BWhite New Laravel project"
     echo -e ""
     echo -e $reset"$BCyan Misc"
     echo -e $reset"-----------------"
-    echo -e $reset"[$Yellow"4"$reset]$BRed Exit"
+    echo -e $reset"[$Yellow"5"$reset]$BRed Exit"
     echo -e ""
-    echo -e $UWhite"Choose 1-4"
+    echo -e $UWhite"Choose 1-5"
     echo -e ""
     echo -ne $reset"$BWhite[$reset$BRed Menu $reset>$BRed Main$reset $BWhite|$reset $BCyan LaravelToolkit $BWhite]$reset > "
     read choice
@@ -327,19 +357,25 @@ menu () {
     if test $choice == '1'
         then
             if check_nginx
-                then clear && menu
+                then menu
                 else install_nginx
             fi
     elif test $choice == '2'
         then
             if check_mysql
-                then clear && menu
+                then menu
                 else install_mysql
             fi
     elif test $choice == '3'
         then
-            create_laravel_project
+            if check_apache2
+                then uninstall_apache2
+                else menu
+            fi
     elif test $choice == '4'
+        then
+            create_laravel_project
+    elif test $choice == '5'
         then
         clear
         exit
