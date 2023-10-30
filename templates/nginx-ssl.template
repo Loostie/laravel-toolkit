@@ -1,0 +1,44 @@
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name {{DOMAIN_NAME}};
+    root {{APP_PATH}}/public;
+    client_max_body_size 200M;
+
+    ssl on;
+    ssl_certificate     {{SSL_CERT}};
+    ssl_certificate_key {{SSL_CERT_KEY}};
+
+    ssl_session_timeout 1d;
+    ssl_session_cache   shared:SSL:50m;
+    ssl_session_tickets off;
+
+    ssl_protocols       TLSv1 TLSv1.1 TLSv1.2;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    index index.php;
+
+    charset utf-8;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/var/run/php/php{{PHP_VER}}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+
+}

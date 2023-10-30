@@ -1,0 +1,352 @@
+#!/bin/bash
+#Author: Loostie | https://github.com/Loostie
+
+#Change this to your desired version
+install_php="8.2"
+# Change this your desired projects path
+project_path="/home/projects/"
+
+
+#################################################################
+#Colors
+reset='\033[0m'
+
+# Regular Colors
+Black='\033[0;30m'
+Red='\033[0;31m'
+Green='\033[0;32m'
+Yellow='\033[0;33m'
+Blue='\033[0;34m'
+Purple='\033[0;35m'
+Cyan='\033[0;36m'
+White='\033[0;37m'
+
+# Bold
+BBlack='\033[1;30m'
+BRed='\033[1;31m'
+BGreen='\033[1;32m'
+BYellow='\033[1;33m'
+BBlue='\033[1;34m'
+BPurple='\033[1;35m'
+BCyan='\033[1;36m'
+BWhite='\033[1;37m'
+
+# Underline
+UBlack='\033[4;30m'
+URed='\033[4;31m'
+UYellow='\033[4;33m'
+UBlue='\033[4;34m'
+UPurple='\033[4;35m'
+UCyan='\033[4;36m'
+UWhite='\033[4;37m'
+
+#variables
+version="0.2"
+php_ppa="ondrej/php"
+php_ver=0
+composer_ver=0
+
+clear
+function boot() {
+	if [ "$(id -u)" -ne 0 ]
+		then echo "This script must be ran as root!"
+	    exit
+    fi
+    if ! grep -q "^deb .*$php_ppa" /etc/apt/sources.list /etc/apt/sources.list.d/* &>/dev/null
+        then add_php_ppa
+        else echo "PHP ppa is installed"
+    fi
+    if hash php 2>/dev/null 
+        then echo "PHP installed"
+        else install_php
+    fi
+    if hash composer 2>/dev/null
+        then echo "Composer installed"
+        else install_composer
+    fi
+
+    #This is just so we can run comopser version without getting warning
+    export COMPOSER_ALLOW_SUPERUSER=1;
+    php_ver=$(php -v | head -n 1 | cut -d " " -f 2 | cut -f1-2 -d".")
+    composer_ver=$(composer --version | cut -d " " -f 3 | cut -f1-3 -d".")
+
+    source db.config
+
+    sudo mkdir $project_path &>/dev/null
+
+    clear
+}
+
+function add_php_ppa () {
+    echo "PHP ppa not found, adding it..."
+    sudo add-apt-repository --yes ppa:$php_ppa &>/dev/null && sudo apt update &>/dev/null
+    boot
+}
+
+function install_php () {
+    echo "Installing PHP..."
+    sudo apt install php$install_php -y &>/dev/null
+
+    echo "Installing necessary PHP modules for Laravel..."
+    sudo apt install openssl libapache2-mod-php${install_php} php${install_php} php${install_php}-bcmath php${install_php}-bz2 php${install_php}-cli php${install_php}-common php${install_php}-curl php${install_php}-fpm php${install_php}-gd php${install_php}-gmp php${install_php}-igbinary php${install_php}-imap php${install_php}-intl php${install_php}-ldap php${install_php}-mbstring php${install_php}-mysql php${install_php}-opcache php${install_php}-readline php${install_php}-redis php${install_php}-xml php${install_php}-zip -y &>/dev/null
+    boot
+}
+
+function install_composer () {
+    echo "Installing Composer..."
+    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+    php composer-setup.php --quiet
+    sudo mv composer.phar /usr/local/bin/composer
+    rm composer-setup.php
+    boot
+}
+
+function install_mysql() {
+    clear
+    echo -ne $reset"$BWhite[$reset$BRed Software - Install $reset>$BRed MySQL$reset $BWhite|$reset $BCyan Enter desired MySQL root password $BWhite]$reset > "
+    read dbpass
+    echo "Updating repositories..."
+    sudo apt update &>/dev/null
+    echo "Installing MySQL server..."
+    sudo apt install mysql-server -y &>/dev/null
+    sudo service mysql-server start &>/dev/null
+    echo "Configuring MySQL..."
+    sudo mysql -uroot <<EOF >/dev/null
+ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '$dbpass';
+FLUSH PRIVILEGES;
+EOF
+    sudo systemctl stop mysql
+    sudo systemctl start mysql
+    
+    echo "Installation complete!"
+    echo "Important! Set the password in the config file!"
+    read -p "Press ENTER to continue"
+    menu
+}
+
+function install_nginx() {
+    clear
+    echo "Updating repositories..."
+    sudo apt update &>/dev/null
+    echo "Installing NGINX..."
+    sudo apt install nginx -y &>/dev/null
+    sudo systemctl start nginx &>/dev/null
+    sudo systemctl enable nginx &>/dev/null
+
+    echo "NGINX has been installed!"
+    read -p "Press ENTER to continue"
+    menu
+}
+
+function configure_project_database() {
+    clear
+    if ! check_mysql
+        then echo -e $BRed"MySQL is not installed! Can't proceed..."
+        return
+    fi
+    echo "Creating DB: $appname ..."
+    sudo mysql -u$DBUSER -p$DBPASS -e "CREATE DATABASE $appname;" &>/dev/null
+
+    echo "Configuring Laravel .env to use DB..."
+    sed -i "s/DB_CONNECTION=.*/DB_CONNECTION=mysql/" $project_path$appname/.env
+    sed -i "s/DB_HOST=.*/DB_HOST=$DBHOST/" $project_path$appname/.env
+    sed -i "s/DB_PORT=.*/DB_PORT=$DBPORT/" $project_path$appname/.env
+    sed -i "s/DB_DATABASE=.*/DB_DATABASE=$appname/" $project_path$appname/.env
+    sed -i "s/DB_USERNAME=.*/DB_USERNAME=$DBUSER/" $project_path$appname/.env
+    sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=$DBPASS/" $project_path$appname/.env
+    return
+}
+
+function generate_http_config() {
+    clear
+    config_path="/etc/nginx/sites-available/$appname.conf"
+    echo "Creating config at $config_path"
+    sudo cp templates/nginx.template $config_path
+
+    sudo sed -i "s/{{DOMAIN_NAME}}/$appurl/g" $config_path
+    sudo sed -i "s@{{APP_PATH}}@$project_path$appname@g" $config_path
+    sudo sed -i "s/{{PHP_VER}}/$php_ver/g" $config_path
+
+    echo "Enabling site..."
+    sudo ln -s $config_path /etc/nginx/sites-enabled/$appname.conf
+    echo "Restarting NGINX..."
+    sudo service nginx restart &>/dev/null
+    echo "Finished!"
+    read -p "Press ENTER to continue"
+    return
+}
+
+function generate_https_config() {
+    clear
+    read -p "If you want to create a https/ssl config you'll need to have your certificates (cert and private key) with their full path ready, do you have this? (yes/no): " sslres
+    sslres=${sslres,,}
+    if ! [ "$sslres" = "yes" ]
+        then choose_web_protocol
+        return
+    fi
+
+    echo -ne $reset"$BWhite[$reset$BRed Configuration $reset>$BRed NGINX$reset $BWhite|$reset $BCyan Enter certificate file path (/foo/bar/example.cert) $BWhite]$reset > "
+    read sslcert
+
+    echo -ne $reset"$BWhite[$reset$BRed Configuration $reset>$BRed NGINX$reset $BWhite|$reset $BCyan Enter privatekey file path (/foo/bar/example.key) $BWhite]$reset > "
+    read sslkey
+
+    config_path="/etc/nginx/sites-available/$appname.conf"
+    echo "Creating config at $config_path"
+    sudo cp templates/nginx-ssl.template $config_path
+
+    sudo sed -i "s/{{DOMAIN_NAME}}/$appurl/g" $config_path
+    sudo sed -i "s@{{APP_PATH}}@$project_path$appname@g" $config_path
+    sudo sed -i "s/{{PHP_VER}}/$php_ver/g" $config_path
+    sudo sed -i "s/{{SSL_CERT}}/$sslcert/g" $config_path
+    sudo sed -i "s/{{SSL_CERT_KEY}}/$sslkey/g" $config_path
+
+
+    echo "Enabling site..."
+    sudo ln -s $config_path /etc/nginx/sites-enabled/$appname.conf
+    echo "Restarting NGINX..."
+    sudo service nginx restart &>/dev/null
+    echo "Finished!"
+    read -p "Press ENTER to continue"
+    return    
+}
+
+function choose_web_protocol() {
+    clear
+    read -p "What type of web protocol would you like to use? (http/https): " web_protocol
+    web_protocol=${web_protocol,,}
+    if [ "$web_protocol" = "http" ]
+        then generate_http_config
+    elif [ "$web_protocol" = "https" ]
+        then generate_https_config
+    else
+        choose_web_protocol
+    fi
+    return
+}
+
+function configure_project_nginx() {
+    clear
+    if ! check_nginx
+        then echo -e $BRed"NGINX is not installed! Can't proceed..."
+        return
+    fi
+
+    echo -ne $reset"$BWhite[$reset$BRed Configuration $reset>$BRed NGINX$reset $BWhite|$reset $BCyan Enter Domain $BWhite]$reset > "
+    read appurl
+
+    choose_web_protocol
+    return
+}
+
+function create_laravel_project() {
+    clear
+    echo -ne $reset"$BWhite[$reset$BRed Configuration $reset>$BRed New Laravel Project$reset $BWhite|$reset $BCyan Enter App name $BWhite]$reset > "
+    read appname
+
+    if [ -z "$appname" ]; then
+      echo "App name cannot be empty :/"
+      read -p "Press ENTER to acknowledge"
+      create_laravel_project
+    fi
+
+    echo "Pulling laravel..."
+    composer create-project laravel/laravel $appname &>/dev/null
+    sudo mv $appname $project_path
+
+    read -p "Do you want to create a database for you application? (yes/no): " dbres
+    dbres=${dbres,,}
+    if [ "$dbres" = "yes" ]
+        then configure_project_database
+    fi
+
+    read -p "Do you want to configure NGINX for your application? (yes/no): " nginxres
+    nginxres=${nginxres,,}
+    if [ "$nginxres" = "yes" ]
+        then configure_project_nginx
+    fi
+
+
+    menu
+}
+
+function check_mysql () {
+    type mysql >/dev/null 2>&1 && return 0 || return 1
+}
+
+function check_nginx() {
+    if which nginx > /dev/null 2>&1
+        then return 0
+        else return 1
+    fi
+}
+
+menu () {
+    clear
+    echo -e "==============================================================================="
+    printf $BRed"
+ _                                     _     _______          _  _     _       
+(_)                                   | |   (_______)        | || |   (_)  _   
+ _       _____  ____ _____ _   _ _____| |       _  ___   ___ | || |  _ _ _| |_ 
+| |     (____ |/ ___|____ | | | | ___ | |      | |/ _ \ / _ \| || |_/ ) (_   _)
+| |_____/ ___ | |   / ___ |\ V /| ____| |      | | |_| | |_| | ||  _ (| | | |_ 
+|_______)_____|_|   \_____| \_/ |_____)\_)     |_|\___/ \___/ \_)_| \_)_|  \__)
+"
+    echo -e ""
+    echo -e $BWhite"v$version"
+    echo -e $Purple"Brought to you by Loostie | https://github.com/Loostie"$reset
+    echo -e $reset"==============================================================================="
+    echo -e ""
+    echo -e "PHP Version: $BWhite$php_ver$reset"
+    echo -e "Composer Version: $BWhite$composer_ver$reset"
+    echo -e ""
+    echo -e $reset"$BCyan Software"
+    echo -e $reset"-----------------"
+    if check_nginx
+        then echo -e $BGreen"NGINX Installed!"
+        else echo -e $reset"[$Yellow"1"$reset]$BWhite Install NGINX"
+    fi
+    if check_mysql
+        then echo -e $BGreen"MySQL Installed!"
+        else echo -e $reset"[$Yellow"2"$reset]$BWhite Install MySQL" 
+    fi
+    echo -e ""
+    echo -e $reset"$BCyan Configuration"
+    echo -e $reset"-----------------"
+    echo -e $reset"[$Yellow"3"$reset]$BWhite New Laravel project"
+    echo -e ""
+    echo -e $reset"$BCyan Misc"
+    echo -e $reset"-----------------"
+    echo -e $reset"[$Yellow"4"$reset]$BRed Exit"
+    echo -e ""
+    echo -e $UWhite"Choose 1-4"
+    echo -e ""
+    echo -ne $reset"$BWhite[$reset$BRed Menu $reset>$BRed Main$reset $BWhite|$reset $BCyan LaravelToolkit $BWhite]$reset > "
+    read choice
+
+    if test $choice == '1'
+        then
+            if check_nginx
+                then clear && menu
+                else install_nginx
+            fi
+    elif test $choice == '2'
+        then
+            if check_mysql
+                then clear && menu
+                else install_mysql
+            fi
+    elif test $choice == '3'
+        then
+            create_laravel_project
+    elif test $choice == '4'
+        then
+        clear
+        exit
+    else
+        menu
+    fi
+}
+
+boot
+menu
