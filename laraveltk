@@ -41,7 +41,7 @@ UCyan='\033[4;36m'
 UWhite='\033[4;37m'
 
 #variables
-version="0.2"
+version="0.3"
 php_ppa="ondrej/php"
 php_ver=0
 composer_ver=0
