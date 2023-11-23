@@ -4,12 +4,12 @@
 
 A set of tools for managing laravel on your server
 
-What Laravel Toolkit will do:
+What Laravel Toolkit **will** do:
 
 - Check for PHP and install if not present
 - Check for [Composer](https://github.com/composer/composer) and install if not present
 
-What Laravel Toolkit can do:
+What Laravel Toolkit **can** do:
 
 - Install [NGINX](https://www.nginx.com)
 - Install and automatically configure [MySQL](https://www.mysql.com)
