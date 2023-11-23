@@ -102,15 +102,12 @@ function install_composer () {
     user_shell=$(basename "$SHELL")
     case $user_shell in
         "bash")
-            echo "Your shell is Bash. Adding line to Bash config file."
             echo "export PATH=~/.config/composer/vendor/bin:\$PATH" >> ~/.bashrc
             ;;
         "zsh")
-            echo "Your shell is Zsh. Adding line to Zsh config file."
             echo "export PATH=~/.config/composer/vendor/bin:\$PATH" >> ~/.zshrc
             ;;
         "fish")
-            echo "Your shell is Fish. Adding line to Fish config file."
             echo "set -x PATH ~/.config/composer/vendor/bin \$PATH" >> ~/.config/fish/config.fish
             ;;
         *)
